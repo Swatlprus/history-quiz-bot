@@ -32,7 +32,22 @@ def help_command(update: Update, context: CallbackContext) -> None:
 def send_question(questions, update: Update, context: CallbackContext) -> None:
     message = update.effective_message
     if message.text == 'Новый вопрос':
-        update.message.reply_text(random.choice(list(questions.keys())))
+        question = random.choice(list(questions.keys()))
+        update.message.reply_text(question)
+        r.set(update.message.chat_id, question)
+    elif message.text == 'Мой счёт':
+        update.message.reply_text('Здесь будет ваш счёт')
+    elif message.text == 'Сдаться':
+        question = (r.get(update.message.chat_id)).decode('utf-8')
+        answer = questions[question]
+        update.message.reply_text('Правильный ответ: ' + answer)
+    else:
+        question = (r.get(update.message.chat_id)).decode('utf-8')
+        answer = questions[question]
+        if message.text in answer:
+            update.message.reply_text('Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»')
+        else:
+            update.message.reply_text('Неправильно… Попробуешь ещё раз? Правильный ответ: ' + answer)
 
 
 def main(tg_token, questions) -> None:
@@ -59,9 +74,16 @@ if __name__ == '__main__':
     env.read_env()
     tg_token = env('TG_TOKEN')
     quiz_folder = env('QUIZ_FOLDER')
+    redis_host = env('REDIS_HOST')
+    redis_port = env('REDIS_PORT')
+    redis_password = env('REDIS_PASSWORD')
     questions = read_questions(quiz_folder)
-    pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
-    r = redis.Redis(connection_pool=pool)
+    redis_pool = redis.ConnectionPool(
+        host=redis_host,
+        port=redis_port,
+        password=redis_password
+    )
+    r = redis.Redis(connection_pool=redis_pool)
     logger.info('Telegram бот начал работу')
     try:
         main(tg_token, questions)
