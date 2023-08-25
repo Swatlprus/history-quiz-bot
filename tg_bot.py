@@ -5,61 +5,105 @@ import functools
 import random
 import redis
 from environs import Env
+from enum import Enum
 
 import telegram
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update, ReplyKeyboardRemove
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    Filters,
+    ConversationHandler,
+    CallbackContext,
+)
 from learn_bot import read_questions
 
 logger = logging.getLogger('Logger')
 
+class Type(Enum):
+    QUESTION = 0
+    ANSWER = 1
+    GIVEUP = 2
 
-def start_bot(tg_token, update: Update, context: CallbackContext) -> None:
+
+def start_bot(bot, update: Update, context: CallbackContext) -> None:
     custom_keyboard = [['Новый вопрос', 'Сдаться'],
                        ['Мой счёт']]
+    
     reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
-    bot = telegram.Bot(token=tg_token)
     bot.send_message(chat_id=update.message.chat_id,
                      text="Привет! Я бот для викторин!",
                      reply_markup=reply_markup)
+    
+    return Type.QUESTION
 
 
-def help_command(update: Update, context: CallbackContext) -> None:
-    """Send a message when the command /help is issued."""
-    update.message.reply_text('Help!')
+def handle_new_question_request(questions, r, update: Update, context: CallbackContext) -> None:
+    question = random.choice(list(questions.keys()))
+    update.message.reply_text(question)
+    r.set(update.message.chat_id, question)
+
+    return Type.GIVEUP
 
 
-def send_question(questions, update: Update, context: CallbackContext) -> None:
+def handle_solution_attempt(questions, r, update: Update, context: CallbackContext) -> None:
     message = update.effective_message
-    if message.text == 'Новый вопрос':
-        question = random.choice(list(questions.keys()))
-        update.message.reply_text(question)
-        r.set(update.message.chat_id, question)
-    elif message.text == 'Мой счёт':
-        update.message.reply_text('Здесь будет ваш счёт')
-    elif message.text == 'Сдаться':
-        question = (r.get(update.message.chat_id)).decode('utf-8')
-        answer = questions[question]
-        update.message.reply_text('Правильный ответ: ' + answer)
+    question = (r.get(update.message.chat_id)).decode('utf-8')
+    answer = questions[question]
+    if message.text in answer:
+        update.message.reply_text('Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»')
     else:
-        question = (r.get(update.message.chat_id)).decode('utf-8')
-        answer = questions[question]
-        if message.text in answer:
-            update.message.reply_text('Правильно! Поздравляю! Для следующего вопроса нажми «Новый вопрос»')
-        else:
-            update.message.reply_text('Неправильно… Попробуешь ещё раз? Правильный ответ: ' + answer)
+        update.message.reply_text('Неправильно… Попробуй еще раз')
+    
+    return Type.ANSWER
 
 
-def main(tg_token, questions) -> None:
+def giveup(questions, r, update: Update, context: CallbackContext) -> None:
+    question = (r.get(update.message.chat_id)).decode('utf-8')
+    answer = questions[question]
+    update.message.reply_text('Правильный ответ: ' + answer)
+    question = random.choice(list(questions.keys()))
+    update.message.reply_text('Новый вопрос: ' + question)
+    r.set(update.message.chat_id, question)
+    
+    return Type.QUESTION
+
+
+def cancel(update: Update, context: CallbackContext):
+    user = update.message.from_user
+    logger.info("Пользователь %s отменил прохождение викторины", user.first_name)
+    update.message.reply_text('Пока! Я надеюсь ты вернёшься к нам.',
+                              reply_markup=ReplyKeyboardRemove())
+
+    return ConversationHandler.END
+
+
+def main(tg_token, questions, r) -> None:
     updater = Updater(tg_token)
     dispatcher = updater.dispatcher
+    bot = telegram.Bot(token=tg_token)
 
-    start = functools.partial(start_bot, tg_token)
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", help_command))
+    start = functools.partial(start_bot, bot)
+    new_question = functools.partial(handle_new_question_request, questions, r)
+    new_answer = functools.partial(handle_solution_attempt, questions, r)
+    give_up = functools.partial(giveup, questions, r)
 
-    random_question = functools.partial(send_question, questions)
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, random_question))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start),],
+
+        states={
+            Type.QUESTION: [MessageHandler(Filters.regex('^Новый вопрос$'), new_question)],
+
+            Type.ANSWER: [MessageHandler(~Filters.command, new_answer),],
+
+            Type.GIVEUP: [MessageHandler(Filters.regex('^Сдаться$'), give_up)],
+        },
+
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dispatcher.add_handler(conv_handler)
 
     updater.start_polling()
     updater.idle()
@@ -86,7 +130,7 @@ if __name__ == '__main__':
     r = redis.Redis(connection_pool=redis_pool)
     logger.info('Telegram бот начал работу')
     try:
-        main(tg_token, questions)
+        main(tg_token, questions, r)
     except requests.exceptions.HTTPError:
         logger.error('Telegram бот упал с ошибкой HTTPError')
     except requests.exceptions.ReadTimeout:
