@@ -8,6 +8,7 @@ from environs import Env
 from enum import Enum
 
 import telegram
+from tg_logger import TelegramLogsHandler
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Updater,
@@ -43,7 +44,7 @@ def handle_new_question_request(questions, r, update: Update, context: CallbackC
     update.message.reply_text(question)
     r.set(update.message.chat_id, question)
 
-    return Type.QUESTION
+    return Type.ANSWER
 
 
 def handle_solution_attempt(questions, r, update: Update, context: CallbackContext) -> None:
@@ -66,7 +67,7 @@ def giveup(questions, r, update: Update, context: CallbackContext) -> None:
     update.message.reply_text('Новый вопрос: ' + question)
     r.set(update.message.chat_id, question)
     
-    return ConversationHandler.END
+    return Type.ANSWER
 
 
 def cancel(update: Update, context: CallbackContext):
@@ -94,7 +95,7 @@ def main(tg_token, questions, r) -> None:
         states={
             Type.QUESTION: [MessageHandler(Filters.regex('^Новый вопрос$'), new_question)],
 
-            Type.ANSWER: [MessageHandler(~Filters.command, new_answer), MessageHandler(Filters.regex('^Сдаться$'), give_up)],
+            Type.ANSWER: [MessageHandler(Filters.regex('^Сдаться$'), give_up), MessageHandler(~Filters.command, new_answer)],
         },
 
         fallbacks=[CommandHandler('cancel', cancel)]
@@ -106,7 +107,7 @@ def main(tg_token, questions, r) -> None:
     updater.idle()
 
 
-if __name__ == '__main__':
+def main():
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
     )
@@ -125,6 +126,9 @@ if __name__ == '__main__':
         password=redis_password
     )
     r = redis.Redis(connection_pool=redis_pool)
+    reserve_telegram_token = env('RESERVE_TELEGRAM_TOKEN')
+    admin_tg_id = env('ADMIN_TG_ID')
+    logger.addHandler(TelegramLogsHandler(reserve_telegram_token, admin_tg_id))
     logger.info('Telegram бот начал работу')
     try:
         main(tg_token, questions, r)
@@ -135,3 +139,7 @@ if __name__ == '__main__':
     except requests.exceptions.ConnectionError:
         logger.error('Telegram бот упал с ошибкой ConnectionError')
         time.sleep(10)
+
+
+if __name__ == '__main__':
+    main()
