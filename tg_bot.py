@@ -24,7 +24,6 @@ logger = logging.getLogger('Logger')
 class Type(Enum):
     QUESTION = 0
     ANSWER = 1
-    GIVEUP = 2
 
 
 def start_bot(bot, update: Update, context: CallbackContext) -> None:
@@ -44,7 +43,7 @@ def handle_new_question_request(questions, r, update: Update, context: CallbackC
     update.message.reply_text(question)
     r.set(update.message.chat_id, question)
 
-    return Type.GIVEUP
+    return Type.QUESTION
 
 
 def handle_solution_attempt(questions, r, update: Update, context: CallbackContext) -> None:
@@ -67,7 +66,7 @@ def giveup(questions, r, update: Update, context: CallbackContext) -> None:
     update.message.reply_text('Новый вопрос: ' + question)
     r.set(update.message.chat_id, question)
     
-    return Type.QUESTION
+    return ConversationHandler.END
 
 
 def cancel(update: Update, context: CallbackContext):
@@ -95,9 +94,7 @@ def main(tg_token, questions, r) -> None:
         states={
             Type.QUESTION: [MessageHandler(Filters.regex('^Новый вопрос$'), new_question)],
 
-            Type.ANSWER: [MessageHandler(~Filters.command, new_answer),],
-
-            Type.GIVEUP: [MessageHandler(Filters.regex('^Сдаться$'), give_up)],
+            Type.ANSWER: [MessageHandler(~Filters.command, new_answer), MessageHandler(Filters.regex('^Сдаться$'), give_up)],
         },
 
         fallbacks=[CommandHandler('cancel', cancel)]
