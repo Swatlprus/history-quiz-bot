@@ -72,7 +72,7 @@ def giveup(questions, r, event, vk_api):
     )
 
     r.set(event.user_id, question)
-    
+
 
 def solution_attempt(questions, r, event, vk_api):
     keyboard = create_keyboard()

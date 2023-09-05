@@ -30,12 +30,12 @@ class Type(Enum):
 def start_bot(bot, update: Update, context: CallbackContext) -> None:
     custom_keyboard = [['Новый вопрос', 'Сдаться'],
                        ['Мой счёт']]
-    
+
     reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
     bot.send_message(chat_id=update.message.chat_id,
                      text="Привет! Я бот для викторин!",
                      reply_markup=reply_markup)
-    
+
     return Type.QUESTION
 
 
@@ -66,7 +66,7 @@ def giveup(questions, r, update: Update, context: CallbackContext) -> None:
     question = random.choice(list(questions.keys()))
     update.message.reply_text('Новый вопрос: ' + question)
     r.set(update.message.chat_id, question)
-    
+
     return Type.ANSWER
 
 
@@ -79,7 +79,7 @@ def cancel(update: Update, context: CallbackContext):
     return ConversationHandler.END
 
 
-def main(tg_token, questions, r) -> None:
+def main_bot(tg_token, questions, r) -> None:
     updater = Updater(tg_token)
     dispatcher = updater.dispatcher
     bot = telegram.Bot(token=tg_token)
@@ -131,7 +131,7 @@ def main():
     logger.addHandler(TelegramLogsHandler(reserve_telegram_token, admin_tg_id))
     logger.info('Telegram бот начал работу')
     try:
-        main(tg_token, questions, r)
+        main_bot(tg_token, questions, r)
     except requests.exceptions.HTTPError:
         logger.error('Telegram бот упал с ошибкой HTTPError')
     except requests.exceptions.ReadTimeout:
